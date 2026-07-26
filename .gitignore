@@ -7,7 +7,7 @@ dashboard/.env.local
 parser/.venv/
 parser/__pycache__/
 parser/out/*.csv
-parser/data/merchant_map.csv
+parser/finance-parser/data/merchant_map.csv
 
 # General
 *.pyc

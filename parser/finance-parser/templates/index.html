@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Finance Parser</title>
+<style>
+:root{--bg:#0e1116;--surface:#161b22;--surface2:#1c2230;--border:#262d38;
+--text:#e6edf3;--dim:#8b949e;--pos:#3fb950;--neg:#f85149;--warn:#d29922;--r:8px}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);
+font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+.wrap{max-width:1100px;margin:0 auto;padding:28px 20px 80px}
+h1{font-size:21px;margin:0 0 4px}
+.sub{color:var(--dim);font-size:13px;margin:0 0 24px}
+.card{background:var(--surface);border:1px solid var(--border);
+border-radius:var(--r);padding:18px;margin-bottom:14px}
+.lbl{font-size:11px;letter-spacing:.05em;text-transform:uppercase;
+color:var(--dim);margin:0 0 10px}
+.num{font-variant-numeric:tabular-nums}
+.pos{color:var(--pos)}.neg{color:var(--neg)}.dim{color:var(--dim)}.warn{color:var(--warn)}
+button{font:inherit;border-radius:6px;cursor:pointer;min-height:38px;padding:9px 16px;border:none}
+.primary{background:var(--text);color:var(--bg);font-weight:600}
+.quiet{background:transparent;color:var(--dim);border:1px solid var(--border)}
+button:disabled{opacity:.4;cursor:not-allowed}
+#drop{border:2px dashed var(--border);border-radius:var(--r);padding:34px 20px;
+text-align:center;color:var(--dim);cursor:pointer;transition:border-color .15s}
+#drop.over{border-color:var(--text);color:var(--text)}
+input,select{font:inherit;background:var(--surface2);color:var(--text);
+border:1px solid var(--border);border-radius:5px;padding:7px 9px;width:100%}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-weight:600;color:var(--dim);font-size:11px;
+text-transform:uppercase;letter-spacing:.04em;padding:8px 8px 8px 0;
+border-bottom:1px solid var(--border)}
+td{padding:9px 8px 9px 0;border-bottom:1px solid var(--border);vertical-align:top}
+tr:last-child td{border-bottom:none}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}
+.stat{font-size:24px;font-weight:600;margin:0}
+.banner{border-radius:6px;padding:11px 13px;margin-bottom:12px;font-size:13px}
+.b-warn{background:rgba(210,153,34,.1);border:1px solid rgba(210,153,34,.35)}
+.b-err{background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.35)}
+.b-ok{background:rgba(63,185,80,.1);border:1px solid rgba(63,185,80,.35)}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+.hide{display:none}
+.pill{display:inline-block;font-size:11px;padding:2px 7px;border-radius:99px;
+background:var(--surface2);color:var(--dim);border:1px solid var(--border)}
+.row-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+details{margin-top:10px}summary{cursor:pointer;color:var(--dim);font-size:13px}
+pre{background:var(--surface2);padding:12px;border-radius:6px;overflow-x:auto;
+font-size:11.5px;margin:8px 0 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Finance Parser</h1>
+  <p class="sub">Runs entirely on this machine. Nothing is uploaded anywhere.</p>
+
+  <div class="card">
+    <div id="drop">
+      <strong>Drop your bank exports here</strong><br>
+      <span style="font-size:13px">or click to choose &middot; .xlsx and .csv</span>
+      <input type="file" id="files" multiple accept=".xlsx,.xls,.csv,.txt" class="hide">
+    </div>
+    <div id="filelist" class="dim" style="font-size:13px;margin-top:12px"></div>
+    <div class="row-actions">
+      <button class="primary" id="parseBtn" disabled>Parse</button>
+      <button class="quiet" id="inspectBtn" disabled>Inspect</button>
+      <button class="quiet" id="resetBtn">Clear</button>
+    </div>
+  </div>
+
+  <div id="inspectOut" class="hide"></div>
+  <div id="results" class="hide"></div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let chosen = [], token = null, lastData = null;
+let categories = {{ categories | tojson }};
+
+const money = (n) => (n < 0 ? "-" : "") + "$" +
+  Math.abs(Number(n||0)).toLocaleString("en-SG",{minimumFractionDigits:2,maximumFractionDigits:2});
+
+/* ---------- file picking ---------- */
+const drop = $("drop");
+drop.onclick = () => $("files").click();
+drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
+drop.ondragleave = () => drop.classList.remove("over");
+drop.ondrop = (e) => {
+  e.preventDefault(); drop.classList.remove("over");
+  addFiles([...e.dataTransfer.files]);
+};
+$("files").onchange = (e) => addFiles([...e.target.files]);
+
+function addFiles(list){
+  for (const f of list) if (!chosen.some(c => c.name === f.name && c.size === f.size)) chosen.push(f);
+  renderFiles();
+}
+function renderFiles(){
+  $("filelist").textContent = chosen.length
+    ? chosen.map(f => f.name).join("  ·  ")
+    : "";
+  $("parseBtn").disabled = !chosen.length;
+  $("inspectBtn").disabled = !chosen.length;
+}
+$("resetBtn").onclick = () => {
+  chosen = []; token = null; $("files").value = "";
+  renderFiles(); $("results").className = "hide"; $("inspectOut").className = "hide";
+};
+
+function formData(){
+  const fd = new FormData();
+  chosen.forEach(f => fd.append("files", f));
+  return fd;
+}
+
+/* ---------- inspect ---------- */
+$("inspectBtn").onclick = async () => {
+  const res = await fetch("/api/inspect", { method:"POST", body: formData() });
+  const data = await res.json();
+  const box = $("inspectOut");
+  box.className = "";
+  box.innerHTML = `<div class="card"><p class="lbl">Inspect</p>` +
+    data.reports.map(r => `
+      <div style="margin-bottom:16px">
+        <strong>${esc(r.filename)}</strong>
+        <span class="pill">${r.detected_bank || "bank not recognised"}</span>
+        <span class="pill">${r.looks_like_card ? "credit card" : "bank account"}</span>
+        <span class="pill">header row ${r.header_row_index === null ? "not found" : r.header_row_index + 1}</span>
+        <div style="margin-top:8px;font-size:13px">
+          <div><span class="dim">Mapped:</span> <span class="mono">${esc(JSON.stringify(r.mapped_columns))}</span></div>
+          ${r.unmapped_columns.length ? `<div class="warn" style="margin-top:4px">Unmapped columns: <span class="mono">${esc(r.unmapped_columns.join(", "))}</span></div>` : ""}
+          <div style="margin-top:4px"><span class="dim">Preamble:</span> <span class="mono">${esc(JSON.stringify(r.preamble))}</span></div>
+        </div>
+        <details><summary>First rows as the parser sees them</summary>
+          <pre>${esc(r.first_rows.map(row => row.join(" | ")).join("\n"))}</pre></details>
+      </div>`).join("") + `</div>`;
+};
+
+/* ---------- parse ---------- */
+$("parseBtn").onclick = async () => {
+  $("parseBtn").disabled = true;
+  $("parseBtn").textContent = "Parsing…";
+  try {
+    const res = await fetch("/api/parse", { method:"POST", body: formData() });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Parse failed");
+    token = data.token;
+    lastData = data;
+    render(data);
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    $("parseBtn").disabled = false;
+    $("parseBtn").textContent = "Parse";
+  }
+};
+
+/* ---------- render ---------- */
+function render(data){
+  const s = data.summary;
+  const box = $("results");
+  box.className = "";
+
+  const fileErrors = data.files.filter(f => f.error);
+
+  box.innerHTML = `
+    ${fileErrors.map(f => `<div class="banner b-err"><strong>${esc(f.filename)}</strong> — ${esc(f.error)}</div>`).join("")}
+    ${s.duplicates.length ? `<div class="banner b-err"><strong>${s.duplicates.length} duplicate transaction${s.duplicates.length>1?"s":""}.</strong> The same export may have been added twice.</div>` : ""}
+    ${s.low_confidence === 0 ? `<div class="banner b-ok">Every transaction matched a rule. Nothing to review.</div>` : ""}
+
+    <div class="card">
+      <p class="lbl">Summary</p>
+      <div class="grid">
+        <div><p class="lbl">Transactions</p><p class="stat num">${s.transactions}</p></div>
+        <div><p class="lbl">Spent</p><p class="stat num neg">${money(-s.spend)}</p></div>
+        <div><p class="lbl">Received</p><p class="stat num pos">${money(s.income)}</p></div>
+        <div><p class="lbl">To review</p><p class="stat num ${s.low_confidence?"warn":""}">${s.low_confidence}</p></div>
+        <div><p class="lbl">Transfer pairs</p><p class="stat num">${s.transfer_pairs}</p></div>
+      </div>
+      <p class="dim" style="font-size:12px;margin:12px 0 0">Months: ${s.months.join(", ") || "—"}</p>
+    </div>
+
+    <div class="card">
+      <p class="lbl">Files</p>
+      <table><thead><tr><th>File</th><th>Account</th><th>Rows</th><th>Skipped</th><th>Closing balance</th><th>Source</th></tr></thead>
+      <tbody>${data.files.map(f => `
+        <tr><td>${esc(f.filename)}</td>
+        <td class="mono">${esc(f.account_id||"—")}</td>
+        <td class="num">${f.row_count}</td>
+        <td class="num dim">${f.skipped}</td>
+        <td class="num ${f.closing_balance<0?"neg":""}">${f.closing_balance===null?'<span class="warn">not found</span>':money(f.closing_balance)}</td>
+        <td class="dim" style="font-size:11.5px">${esc(f.balance_source||"—")}${f.as_of?` · ${esc(f.as_of)}`:""}</td></tr>`).join("")}
+      </tbody></table>
+    </div>
+
+    ${data.accounts_needing_balance.length ? `
+    <div class="card">
+      <p class="lbl">Closing balances needed</p>
+      <p class="dim" style="font-size:13px;margin:0 0 12px">No balance column or statement balance was found in these files. Type the figure from your bank app. Credit cards: enter the amount owed as a negative number.</p>
+      <table><thead><tr><th>Account</th><th>Month</th><th>Balance (SGD)</th><th>As of</th></tr></thead>
+      <tbody>${data.accounts_needing_balance.map((a,i) => `
+        <tr><td class="mono">${esc(a.account_id)}</td>
+        <td><input id="bm${i}" value="${esc(a.suggested_month)}" placeholder="2026-07"></td>
+        <td><input id="bv${i}" type="number" step="0.01" placeholder="0.00"></td>
+        <td><input id="bd${i}" type="date"></td></tr>`).join("")}
+      </tbody></table>
+      <div class="row-actions"><button class="quiet" onclick="saveBalances()">Save balances</button></div>
+    </div>` : ""}
+
+    ${data.unknowns.length ? `
+    <div class="card">
+      <p class="lbl">Review — ${data.unknowns.length} unrecognised description${data.unknowns.length>1?"s":""}</p>
+      <p class="dim" style="font-size:13px;margin:0 0 14px">Label each one once and it is remembered for every future run. Leave a row blank to skip it — it stays low-confidence and you can categorise it in the sheet.</p>
+      <table><thead><tr><th style="width:26%">Description</th><th>Times</th><th>Total</th>
+      <th style="width:20%">Pattern to save</th><th>Match</th><th style="width:14%">Merchant</th>
+      <th style="width:15%">Category</th><th>Type</th></tr></thead>
+      <tbody>${data.unknowns.map((u,i) => unknownRow(u,i)).join("")}</tbody></table>
+      <div class="row-actions">
+        <button class="primary" onclick="saveRules(${data.unknowns.length})">Save rules &amp; re-classify</button>
+      </div>
+    </div>` : ""}
+
+    <div class="card">
+      <p class="lbl">Download</p>
+      <p class="dim" style="font-size:13px;margin:0 0 12px">In Google Sheets use File → Import → <strong>Append to current sheet</strong>, and untick “Convert text to numbers, dates and formulas”.</p>
+      <div class="row-actions">
+        <button class="primary" onclick="dl('transactions')">transactions.csv</button>
+        <button class="primary" onclick="dl('balances')">balances.csv</button>
+      </div>
+    </div>`;
+}
+
+function unknownRow(u, i){
+  /* A pattern that would match many other descriptions is too broad to save
+     as 'contains' — default those to an exact match on the full text. */
+  const broad = u.breadth > 3;
+  const pattern = broad ? u.description_raw : u.suggested_pattern;
+  const match = broad ? "exact" : "contains";
+
+  return `<tr>
+    <td class="mono" title="${esc(u.description_raw)}">${esc(u.description_raw.slice(0,52))}${u.description_raw.length>52?"…":""}
+      <div style="margin-top:3px"><span class="pill">${esc(u.accounts.join(", "))}</span></div></td>
+    <td class="num">${u.count}</td>
+    <td class="num ${u.total<0?"neg":"pos"}">${money(u.total)}</td>
+    <td><input id="p${i}" value="${esc(pattern)}">
+      ${broad ? `<div class="warn" style="font-size:11px;margin-top:3px">short pattern matched ${u.breadth} others — using exact</div>` : ""}</td>
+    <td><select id="m${i}">
+      ${["contains","prefix","exact","regex"].map(o => `<option ${o===match?"selected":""}>${o}</option>`).join("")}
+    </select></td>
+    <td><input id="n${i}" placeholder="name"></td>
+    <td><select id="c${i}"><option value="">—</option>
+      ${categories.map(c => `<option>${esc(c)}</option>`).join("")}</select></td>
+    <td><select id="t${i}">
+      ${["expense","income","transfer","refund","fee"].map(o => `<option>${o}</option>`).join("")}
+    </select></td></tr>`;
+}
+
+/* ---------- actions ---------- */
+async function saveRules(count){
+  const rules = [];
+  for (let i = 0; i < count; i++){
+    const pattern = $("p"+i)?.value.trim();
+    const category = $("c"+i)?.value;
+    if (!pattern || !category) continue;   // both required, else skip the row
+    rules.push({
+      pattern,
+      match_type: $("m"+i).value,
+      merchant: $("n"+i).value.trim() || pattern,
+      category,
+      type: $("t"+i).value,
+    });
+  }
+  if (!rules.length){ alert("Nothing to save — set a category on at least one row."); return; }
+
+  const res = await fetch("/api/rules", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({ token, rules })
+  });
+  const data = await res.json();
+  if (!res.ok){ alert(data.error); return; }
+
+  /* The rules endpoint returns only what changed — merge it over the parse
+     result so the Files and balances sections survive the re-render. */
+  lastData = { ...lastData, summary: data.summary, unknowns: data.unknowns, rows: data.rows };
+  render(lastData);
+  window.scrollTo({ top: 0, behavior: "smooth" });
+  alert(`${data.rules_written} rule${data.rules_written===1?"":"s"} saved to merchant_map.csv.`);
+}
+
+async function saveBalances(){
+  const pending = lastData?.accounts_needing_balance || [];
+  const balances = [];
+
+  pending.forEach((account, i) => {
+    const value = $("bv"+i)?.value;
+    if (value === "" || value === null || value === undefined) return;
+    balances.push({
+      account_id: account.account_id,
+      month: $("bm"+i).value.trim(),
+      balance_sgd: value,
+      as_of: $("bd"+i).value,
+    });
+  });
+
+  if (!balances.length){ alert("Enter at least one balance."); return; }
+
+  const res = await fetch("/api/balances", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({ token, balances })
+  });
+  const data = await res.json();
+  if (!res.ok){ alert(data.error); return; }
+  alert(`${data.balances.length} balance row${data.balances.length===1?"":"s"} ready. Download balances.csv below.`);
+}
+
+function dl(kind){
+  if (!token){ alert("Parse some files first."); return; }
+  window.location = `/api/download/${kind}?token=${encodeURIComponent(token)}`;
+}
+
+function esc(s){
+  return String(s ?? "").replace(/[&<>"']/g, c =>
+    ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+</script>
+</body>
+</html>

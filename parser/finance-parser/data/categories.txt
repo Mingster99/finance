@@ -1,0 +1,27 @@
+Groceries
+Rent/Mortgage
+Utilities
+Telco & Internet
+Transport
+Insurance
+Healthcare
+Education
+Dining
+Shopping
+Entertainment
+Subscriptions
+Travel
+Personal Care
+Gifts & Donations
+Investment Contribution
+Savings Transfer
+Salary
+Bonus
+Dividends & Interest
+Reimbursement
+Other Income
+Internal Transfer
+Credit Card Payment
+CPF Contribution
+Bank Fees
+Refund
