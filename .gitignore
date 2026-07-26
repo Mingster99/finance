@@ -1,0 +1,15 @@
+# Dashboard
+dashboard/node_modules/
+dashboard/.next/
+dashboard/.env.local
+
+# Parser
+parser/.venv/
+parser/__pycache__/
+parser/out/*.csv
+parser/data/merchant_map.csv
+
+# General
+*.pyc
+.DS_Store
+*.env.local
