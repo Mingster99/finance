@@ -184,3 +184,39 @@ change `PORT` at the top of `app.py`.
 **Rebates or refunds showing as spending**
 The sign convention for that bank is wrong. See step 3 of ADDING_A_BANK.md —
 verify against a rebate row, never a purchase.
+
+---
+
+## The credit card double-count
+
+If you pay your card from your own bank account, the payment appears on **both**
+statements: a withdrawal on the bank export and a payment credit on the card
+export. Neither is spending — the spending already happened when you swiped.
+Counting the payment again doubles it.
+
+Both legs must be `type: transfer`, category `Credit Card Payment`. The rules
+covering UOB are:
+
+| Description on | Pattern in the map |
+|---|---|
+| bank export | `Bill Payment Card payment` |
+| card export | `PAYMT THRU E-BANK` |
+
+**A monthly sanity check:** your card payment should equal the previous
+statement's balance if you pay in full. If a payment shows up in your spending
+totals, it's typed wrong.
+
+### The same trap for your own transfers
+
+Any movement between accounts **you own** is a transfer, not an expense —
+top-ups to YouTrip, Moomoo or IBKR, and moves between your own bank accounts.
+Only money leaving your household is an expense.
+
+The parser cannot tell these apart, because a `Funds Trf - FAST` to your own
+account and one to a friend look identical. Both arrive as `expense`, the safer
+default: it overstates spending rather than hiding it. You have to judge each
+one in the review table.
+
+Where the description carries a stable identifier — a recipient reference you
+recognise — save it as a rule and it's handled from then on. Where it's a
+one-off, leave it and fix the row in the sheet.
