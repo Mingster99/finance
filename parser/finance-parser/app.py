@@ -45,8 +45,8 @@ def public_rows(rows):
 
 def summarise(result):
     rows = result["rows"]
-    spend = sum(abs(r["amount_sgd"]) for r in rows
-                if r["type"] in ("expense", "fee"))
+    spend = sum(-r["amount_sgd"] for r in rows
+                if r["type"] in ("expense", "fee") and r["amount_sgd"] < 0)
     income = sum(r["amount_sgd"] for r in rows if r["type"] == "income")
 
     return {
@@ -202,8 +202,11 @@ def open_browser():
 
 
 if __name__ == "__main__":
+    _rules = classify.load_rules(MERCHANT_MAP)
     print(f"\n  Finance parser running at http://{HOST}:{PORT}")
     print("  Local only — not reachable from other devices.")
+    print(f"  Merchant map: {MERCHANT_MAP}")
+    print(f"  Rules loaded: {len(_rules)}")
     print("  Press Ctrl+C to stop.\n")
     Timer(1.2, open_browser).start()
     app.run(host=HOST, port=PORT, debug=False)

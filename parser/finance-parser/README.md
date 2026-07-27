@@ -181,6 +181,18 @@ Rename it with a slug prefix: `uob-one-card__june.xlsx` forces the account to
 Another copy of the server is still running. Quit its Terminal window, or
 change `PORT` at the top of `app.py`.
 
+**Received total shows $0.00 even though salary came in**
+Unrecognised descriptions default to `expense` regardless of sign. Any positive
+deposit that isn't in the merchant map will appear in the review table typed as
+expense. Change its type to `income` there and save the rule — it then counts
+toward RECEIVED and is remembered for every future run. Common ones to add:
+salary GIROs, reimbursements, and ad-hoc transfers received from others.
+
+**Refunds or credits inflating SPENT**
+They don't — positive-amount expenses are excluded from the SPENT counter.
+Only negative amounts (money actually leaving) count as spending, so a refund
+typed as `expense` correctly offsets nothing and doesn't double-count.
+
 **Rebates or refunds showing as spending**
 The sign convention for that bank is wrong. See step 3 of ADDING_A_BANK.md —
 verify against a rebate row, never a purchase.

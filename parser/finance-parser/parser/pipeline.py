@@ -122,6 +122,8 @@ def parse_file(raw_bytes, filename, rules, account_overrides=None):
         merchant, category, txn_type, confidence = classify.classify(
             description_raw, rules
         )
+        if amount_sgd > 0 and not is_card and txn_type == "expense":
+            txn_type = "income"
 
         rows.append({
             "txn_id": enrich.make_txn_id(
@@ -280,6 +282,9 @@ def reclassify(rows, merchant_map_path):
         merchant, category, txn_type, confidence = classify.classify(
             row["description_raw"], rules
         )
+        is_card = row.get("account_id", "").endswith("-card")
+        if row.get("amount_sgd", 0) > 0 and not is_card and txn_type == "expense":
+            txn_type = "income"
         row.update({
             "merchant": merchant,
             "category": category,
