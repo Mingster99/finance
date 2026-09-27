@@ -111,12 +111,37 @@ function toMonth(value) {
 }
 
 /**
+ * Which spreadsheet a given user reads. `SHEET_MAP` is a JSON object of
+ * `{ "email": "sheetId" }`; `SHEET_ID` is the fallback for anyone unmapped,
+ * which keeps the original single-sheet setup working. The email always comes
+ * from the authenticated session (never user input), so a user can only ever
+ * be routed to their own sheet. Each mapped sheet must be shared with the
+ * service account for reads to succeed.
+ */
+export function sheetIdForEmail(email) {
+  const normalized = String(email || "").trim().toLowerCase();
+
+  const raw = process.env.SHEET_MAP;
+  if (raw) {
+    try {
+      const map = JSON.parse(raw);
+      for (const [key, value] of Object.entries(map)) {
+        if (key.trim().toLowerCase() === normalized && value) return value;
+      }
+    } catch {
+      // A malformed SHEET_MAP falls through to the single-sheet SHEET_ID.
+    }
+  }
+
+  return process.env.SHEET_ID || null;
+}
+
+/**
  * Reads all four tabs in a single API call and normalises types.
  * Everything downstream can assume numbers are numbers.
  */
-export async function fetchSheetData() {
-  const spreadsheetId = process.env.SHEET_ID;
-  if (!spreadsheetId) throw new Error("SHEET_ID is not set");
+export async function fetchSheetData(spreadsheetId) {
+  if (!spreadsheetId) throw new Error("No spreadsheet id provided");
 
   const sheets = sheetsClient();
 
