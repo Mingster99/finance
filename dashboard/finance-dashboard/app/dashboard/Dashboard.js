@@ -7,6 +7,7 @@ import {
   missingBalances,
   latestTransactionMonth,
 } from "@/lib/aggregate";
+import { useFinanceData } from "@/lib/useFinanceData";
 import { sgd, monthLabel } from "@/lib/format";
 import ToggleGroup from "./ToggleGroup";
 import NetWorthChart from "./charts/NetWorthChart";
@@ -24,30 +25,9 @@ const RANGES = [
 ];
 
 export default function Dashboard() {
-  const [data, setData] = useState(null);
-  const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const { data, loading, error, reload } = useFinanceData();
   const [range, setRange] = useState(6);
   const [selectedMonth, setSelectedMonth] = useState(null);
-
-  async function load() {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await fetch("/api/data");
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.detail || payload.error || "Request failed");
-      setData(payload);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    load();
-  }, []);
 
   const transactions = data?.transactions;
 
@@ -77,7 +57,7 @@ export default function Dashboard() {
         {error}
         <br />
         <br />
-        <button className="btn btn-quiet" onClick={load} style={{ fontSize: 13, padding: "8px 14px" }}>
+        <button className="btn btn-quiet" onClick={reload} style={{ fontSize: 13, padding: "8px 14px" }}>
           Try again
         </button>
       </div>
@@ -164,7 +144,7 @@ export default function Dashboard() {
       </p>
 
       <div style={{ textAlign: "center", marginTop: 12 }}>
-        <button className="btn btn-quiet" onClick={load} style={{ fontSize: 13, padding: "10px 18px" }}>
+        <button className="btn btn-quiet" onClick={reload} style={{ fontSize: 13, padding: "10px 18px" }}>
           Refresh
         </button>
       </div>

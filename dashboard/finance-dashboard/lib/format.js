@@ -54,6 +54,42 @@ export const monthLabel = (month) => {
   return date.toLocaleDateString("en-SG", { month: "long", year: "numeric" });
 };
 
+/**
+ * Parse a transaction date to a UTC timestamp (ms) for sorting, or NaN.
+ * The sheet returns dates as Singapore day-first "D/M/YY" (e.g. "4/5/26" =
+ * 4 May 2026), which must NOT be string-sorted — "9/9/26" would sort after
+ * "26/9/26". Also tolerates ISO "YYYY-MM-DD" in case the source changes.
+ */
+export const parseTxnDate = (value) => {
+  if (!value) return NaN;
+  const s = String(value).trim();
+
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/); // ISO
+  if (m) return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/); // day-first D/M/YY(YY)
+  if (m) {
+    let year = Number(m[3]);
+    if (year < 100) year += 2000;
+    return Date.UTC(year, Number(m[2]) - 1, Number(m[1]));
+  }
+
+  const t = Date.parse(s);
+  return Number.isNaN(t) ? NaN : t;
+};
+
+/** "4/5/26" or "2026-05-04" -> "4 May 2026". */
+export const dateLabel = (value) => {
+  const t = parseTxnDate(value);
+  if (Number.isNaN(t)) return value ? String(value) : "";
+  return new Date(t).toLocaleDateString("en-SG", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+};
+
 /** "2025-03" -> "Mar" — short label for chart axes. */
 export const monthShort = (month) => {
   const date = parseMonth(month);
