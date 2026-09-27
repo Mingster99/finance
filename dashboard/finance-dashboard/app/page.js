@@ -14,7 +14,7 @@ export default async function Home() {
 
   return (
     <main className="gate">
-      <h1>Finance</h1>
+      <h1>Miu Finance</h1>
       <form
         action={async () => {
           "use server";

@@ -1,11 +1,11 @@
 {
-  "name": "Finance",
-  "short_name": "Finance",
+  "name": "Miu Finance",
+  "short_name": "Miu Finance",
   "description": "Personal finance dashboard",
   "start_url": "/dashboard",
   "display": "standalone",
-  "background_color": "#0e1116",
-  "theme_color": "#0e1116",
+  "background_color": "#f5f1ea",
+  "theme_color": "#f5f1ea",
   "orientation": "portrait",
   "icons": [
     {

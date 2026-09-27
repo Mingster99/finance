@@ -9,7 +9,7 @@ export default function DashboardLayout({ children }) {
   return (
     <main className="shell">
       <div className="dash-header">
-        <span className="wordmark">Finance</span>
+        <span className="wordmark">Miu Finance</span>
         <form
           action={async () => {
             "use server";

@@ -18,13 +18,13 @@ const sans = Jost({
 });
 
 export const metadata = {
-  title: "Finance",
+  title: "Miu Finance",
   description: "Personal finance dashboard",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Finance",
+    title: "Miu Finance",
   },
 };
 
