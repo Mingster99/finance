@@ -1,33 +1,34 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  netWorthSummary,
   cashFlowSeries,
-  categoryTotals,
   findDuplicates,
   missingBalances,
   latestTransactionMonth,
 } from "@/lib/aggregate";
+import { sgd, monthLabel } from "@/lib/format";
+import ToggleGroup from "./ToggleGroup";
+import NetWorthChart from "./charts/NetWorthChart";
+import CashFlowChart from "./charts/CashFlowChart";
+import SpendingDonut from "./charts/SpendingDonut";
+import SavingsRate from "./charts/SavingsRate";
+import CategoryTrendChart from "./charts/CategoryTrendChart";
+import MonthComparison from "./charts/MonthComparison";
 
-const sgd = (value) =>
-  new Intl.NumberFormat("en-SG", {
-    style: "currency",
-    currency: "SGD",
-    maximumFractionDigits: 0,
-  }).format(value ?? 0);
-
-const monthLabel = (month) => {
-  if (!month) return "—";
-  const [year, m] = month.split("-");
-  const date = new Date(Number(year), Number(m) - 1, 1);
-  return date.toLocaleDateString("en-SG", { month: "long", year: "numeric" });
-};
+const RANGES = [
+  { value: 3, label: "3M" },
+  { value: 6, label: "6M" },
+  { value: 12, label: "12M" },
+  { value: 0, label: "All" },
+];
 
 export default function Dashboard() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [range, setRange] = useState(6);
+  const [selectedMonth, setSelectedMonth] = useState(null);
 
   async function load() {
     setLoading(true);
@@ -48,6 +49,22 @@ export default function Dashboard() {
     load();
   }, []);
 
+  const transactions = data?.transactions;
+
+  // Every month that has transactions, ascending. Drives the donut/comparison
+  // navigation and the category-trend range.
+  const txnMonths = useMemo(() => {
+    if (!transactions) return [];
+    return [...new Set(transactions.map((t) => t.month).filter(Boolean))].sort();
+  }, [transactions]);
+
+  // Default the selected month to the latest once data arrives.
+  useEffect(() => {
+    if (transactions && selectedMonth === null) {
+      setSelectedMonth(latestTransactionMonth(transactions));
+    }
+  }, [transactions, selectedMonth]);
+
   if (loading) {
     return <p className="dim">Loading…</p>;
   }
@@ -67,13 +84,15 @@ export default function Dashboard() {
     );
   }
 
-  const { transactions, balances, accounts } = data;
+  const { balances, accounts } = data;
 
-  const netWorth = netWorthSummary(balances, accounts);
+  const monthLimit = range || null;
+  const trendMonths = monthLimit ? txnMonths.slice(-monthLimit) : txnMonths;
+  const month = selectedMonth || latestTransactionMonth(transactions);
+
   const cashFlow = cashFlowSeries(transactions);
-  const currentMonth = latestTransactionMonth(transactions);
-  const thisMonth = cashFlow.find((m) => m.month === currentMonth);
-  const categories = categoryTotals(transactions, currentMonth).slice(0, 5);
+  const cashFlowMonth = cashFlow.find((m) => m.month === month);
+
   const duplicates = findDuplicates(transactions);
   const missing = missingBalances(balances, accounts);
 
@@ -97,53 +116,27 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="card">
-        <p className="label">Net worth</p>
-        <p className="figure numeric">{sgd(netWorth.current)}</p>
-        {netWorth.change !== null && (
-          <p className={`delta numeric ${netWorth.change >= 0 ? "positive" : "negative"}`}>
-            {netWorth.change >= 0 ? "+" : "−"}
-            {sgd(Math.abs(netWorth.change)).replace("S$", "S$")} vs last month
-          </p>
-        )}
-        <p className="delta dim">As of {monthLabel(netWorth.month)}</p>
+      <div className="range-bar">
+        <span className="label" style={{ margin: 0 }}>Range</span>
+        <ToggleGroup options={RANGES} value={range} onChange={setRange} ariaLabel="Time range" />
       </div>
 
-      <div className="grid-2">
-        <div className="card">
-          <p className="label">In</p>
-          <p className="figure numeric positive" style={{ fontSize: 22 }}>
-            {sgd(thisMonth?.income ?? 0)}
-          </p>
-        </div>
-        <div className="card">
-          <p className="label">Out</p>
-          <p className="figure numeric negative" style={{ fontSize: 22 }}>
-            {sgd(thisMonth?.expenses ?? 0)}
-          </p>
-        </div>
-      </div>
+      <NetWorthChart balances={balances} accounts={accounts} monthLimit={monthLimit} />
 
-      <div className="card">
-        <p className="label">Net this month · {monthLabel(currentMonth)}</p>
-        <p
-          className={`figure numeric ${(thisMonth?.net ?? 0) >= 0 ? "positive" : "negative"}`}
-          style={{ fontSize: 24 }}
-        >
-          {sgd(thisMonth?.net ?? 0)}
-        </p>
-      </div>
+      <SavingsRate cashFlowMonth={cashFlowMonth} month={month} />
 
-      <div className="card">
-        <p className="label">Top categories · {monthLabel(currentMonth)}</p>
-        {categories.length === 0 && <p className="dim" style={{ fontSize: 14, margin: 0 }}>No spending recorded.</p>}
-        {categories.map((c) => (
-          <div className="row" key={c.category}>
-            <span>{c.category}</span>
-            <span className="numeric">{sgd(c.total)}</span>
-          </div>
-        ))}
-      </div>
+      <CashFlowChart transactions={transactions} monthLimit={monthLimit} />
+
+      <SpendingDonut
+        transactions={transactions}
+        month={month}
+        months={txnMonths}
+        onMonthChange={setSelectedMonth}
+      />
+
+      <CategoryTrendChart transactions={transactions} months={trendMonths} />
+
+      <MonthComparison transactions={transactions} month={month} months={txnMonths} />
 
       <div className="card">
         <p className="label">Accounts</p>
@@ -163,16 +156,6 @@ export default function Dashboard() {
               </div>
             );
           })}
-      </div>
-
-      <div className="card">
-        <p className="label">Cash flow · last 6 months</p>
-        {cashFlow.slice(-6).reverse().map((m) => (
-          <div className="row" key={m.month}>
-            <span>{monthLabel(m.month)}</span>
-            <span className={`numeric ${m.net >= 0 ? "positive" : "negative"}`}>{sgd(m.net)}</span>
-          </div>
-        ))}
       </div>
 
       <p className="dim" style={{ fontSize: 12, textAlign: "center", marginTop: 20 }}>

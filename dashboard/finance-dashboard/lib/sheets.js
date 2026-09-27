@@ -81,6 +81,36 @@ function toBoolean(value) {
 }
 
 /**
+ * Normalise a month cell to "YYYY-MM". The parser emits it as text, but if the
+ * cell gets typed as a date in the sheet, UNFORMATTED_VALUE hands back a serial
+ * number (days since 1899-12-30) instead — which would otherwise reach the UI
+ * as an unparseable string and render as "Invalid Date". Also tolerates a full
+ * date string like "2026-07-01".
+ */
+function toMonth(value) {
+  if (value === null || value === undefined || value === "") return "";
+
+  // Google Sheets date serial → the first of that month, in UTC.
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const d = new Date(Math.round((value - 25569) * 86400000));
+    if (!Number.isNaN(d.getTime())) {
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+    }
+  }
+
+  const text = String(value).trim();
+  const ym = text.match(/^(\d{4})-(\d{2})/); // "2026-07" or "2026-07-01"
+  if (ym) return `${ym[1]}-${ym[2]}`;
+
+  const d = new Date(text);
+  if (!Number.isNaN(d.getTime())) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  }
+
+  return text;
+}
+
+/**
  * Reads all four tabs in a single API call and normalises types.
  * Everything downstream can assume numbers are numbers.
  */
@@ -107,12 +137,12 @@ export async function fetchSheetData() {
       amount_sgd: toNumber(row.amount_sgd),
       amount: toNumber(row.amount),
       date: String(row.date ?? ""),
-      month: String(row.month ?? ""),
+      month: toMonth(row.month),
     })),
     balances: (balances || []).map((row) => ({
       ...row,
       balance_sgd: toNumber(row.balance_sgd),
-      month: String(row.month ?? ""),
+      month: toMonth(row.month),
     })),
     accounts: (accounts || []).map((row) => ({
       ...row,

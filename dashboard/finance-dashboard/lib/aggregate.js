@@ -48,6 +48,47 @@ export function netWorthSeries(balances, accounts) {
   return series;
 }
 
+/**
+ * Net worth split into assets (non-liability accounts) and liabilities
+ * (accounts flagged is_liability, stored as negative balances) per month.
+ * Same carry-forward rule as netWorthSeries. `liabilities` is returned as a
+ * positive magnitude so a stacked/paired chart doesn't need to flip signs;
+ * `total` stays assets − liabilities.
+ */
+export function netWorthByClass(balances, accounts) {
+  const included = new Set(
+    accounts.filter((a) => a.include_in_net_worth).map((a) => a.account_id)
+  );
+  const liabilityIds = new Set(
+    accounts.filter((a) => a.is_liability).map((a) => a.account_id)
+  );
+
+  const months = monthsIn(balances);
+  const lastKnown = new Map();
+  const series = [];
+
+  for (const month of months) {
+    for (const row of balances.filter((b) => b.month === month)) {
+      lastKnown.set(row.account_id, row.balance_sgd);
+    }
+
+    let assets = 0;
+    let liabilities = 0;
+    for (const [accountId, value] of lastKnown) {
+      if (!included.has(accountId)) continue;
+      if (liabilityIds.has(accountId)) {
+        liabilities += Math.abs(value);
+      } else {
+        assets += value;
+      }
+    }
+
+    series.push({ month, assets, liabilities, total: assets - liabilities });
+  }
+
+  return series;
+}
+
 /** Current net worth plus the change from the previous month. */
 export function netWorthSummary(balances, accounts) {
   const series = netWorthSeries(balances, accounts);
@@ -119,6 +160,78 @@ export function categoryTotals(transactions, month) {
     .map(([category, total]) => ({ category, total }))
     .filter((entry) => entry.total !== 0)
     .sort((a, b) => b.total - a.total);
+}
+
+/**
+ * Savings rate for one cashFlowSeries bucket: the share of income kept.
+ * Returns null when there's no income (a rate is meaningless then), so the UI
+ * can show "—" rather than a misleading 0% or a divide-by-zero.
+ */
+export function savingsRate(cashFlowMonth) {
+  if (!cashFlowMonth || !cashFlowMonth.income) return null;
+  return cashFlowMonth.net / cashFlowMonth.income;
+}
+
+/**
+ * Spend per category across several months, keeping the top N categories
+ * (by total spend over the range) and folding everything else into "Other".
+ * Each returned row is chart-ready for a stacked bar: { month, <cat>: n, ... }.
+ * Uses the same expense/fee/refund rule as categoryTotals.
+ */
+export function categoryTrendSeries(transactions, months, topN = 6) {
+  const monthSet = new Set(months);
+
+  // First pass: total per category over the whole range, to pick the top N.
+  const overall = new Map();
+  const perMonth = new Map(months.map((m) => [m, new Map()]));
+
+  for (const row of transactions) {
+    if (!monthSet.has(row.month)) continue;
+
+    let delta = 0;
+    if (row.type === SPEND_TYPE || row.type === FEE_TYPE) {
+      delta = Math.abs(row.amount_sgd);
+    } else if (row.type === REFUND_TYPE) {
+      delta = -Math.abs(row.amount_sgd);
+    } else {
+      continue;
+    }
+
+    const category = row.category || "Uncategorised";
+    overall.set(category, (overall.get(category) || 0) + delta);
+    const bucket = perMonth.get(row.month);
+    bucket.set(category, (bucket.get(category) || 0) + delta);
+  }
+
+  const topCategories = [...overall.entries()]
+    .filter(([, total]) => total > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, topN)
+    .map(([category]) => category);
+  const topSet = new Set(topCategories);
+
+  const rows = months.map((month) => {
+    const bucket = perMonth.get(month) || new Map();
+    const row = { month };
+    let other = 0;
+    for (const cat of topCategories) row[cat] = 0;
+    for (const [category, total] of bucket) {
+      if (topSet.has(category)) {
+        row[category] = Math.max(0, total);
+      } else if (total > 0) {
+        other += total;
+      }
+    }
+    if (other > 0) row.Other = other;
+    return row;
+  });
+
+  const keys = other_present(rows) ? [...topCategories, "Other"] : topCategories;
+  return { rows, categories: keys };
+}
+
+function other_present(rows) {
+  return rows.some((r) => (r.Other || 0) > 0);
 }
 
 /**
